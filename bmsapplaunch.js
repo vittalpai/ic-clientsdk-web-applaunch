@@ -318,6 +318,7 @@
     }
   })(window);
 
+  var IC = IC ? IC : {};
   // Utils
   function validateString(str) {
     if (typeof str == 'undefined' || !str || str.length === 0 || str === "" || !/[^\s]/.test(str) || /^\s*$/.test(str) || str.replace(/\s/g,"") === "")
@@ -329,40 +330,111 @@
       return false;
     }
   }
+
+  function isEmptyObject(obj) {
+    for(var prop in obj) {
+      if(obj.hasOwnProperty(prop))
+      return false;
+    }
+    return JSON.stringify(obj) === JSON.stringify({});
+  }
   // private methods
   __ICConfig = function() {
-      /*jshint strict:false, maxparams:4*/
-      var config;
-      var user;
-      var URLBuilder;
-      var isInitialized = false; //default value
+    /*jshint strict:false, maxparams:4*/
+    var config;
+    var user;
+    var URLBuilder;
+    var isInitialized = false; //default value
 
-      this.__getConfig= function() {
-      	return config;
-      }
+    this.__getConfig= function() {
+      return config;
+    }
 
-      this.__setConfig=function(appConfig) {
-      	config = appConfig;
-      }
+    this.__setConfig=function(appConfig) {
+      config = appConfig;
+    }
 
-      this.__getUser= function() {
-        return user;
-      }
+    this.__getUser= function() {
+      return user;
+    }
 
-      this.__setUser= function(userObj) {
-        user = userObj;
-      }
+    this.__setUser= function(userObj) {
+      user = userObj;
+    }
 
-      this.__getURLBuilder= function() {
-      	return URLBuilder;
-      }
+    this.__getURLBuilder= function() {
+      return URLBuilder;
+    }
 
-      this.__setURLBuilder=function(builder) {
-      	URLBuilder = builder;
-      }
+    this.__setURLBuilder=function(builder) {
+      URLBuilder = builder;
+    }
   };
-
   IC.Config = new __ICConfig;
+
+  __ICUtils = function() {
+    this.__IsUserNeedsToBeRegistered = function() {
+      return true;
+    }
+
+    this.__IsUserNeedsToBeReRegistered = function() {
+      return true;
+    }
+
+    this.__getRegistrationData = function() {
+      var registrationData = {};
+      registrationData.deviceId = IC.Config.config.__getDeviceID();
+      registrationData.platform = 'w'
+      registrationData.userId = IC.Config.user.__getUserID();
+      if (!isEmptyObject(IC.Config.user.__getAttributes())) {
+        registrationData.attributes = IC.Config.user.__getAttributes();
+      }
+      return registrationData
+    }
+
+    this.__getUpdateRegistrationData = function() {
+      var registrationData = {};
+      registrationData.platform = 'w'
+      registrationData.userId = IC.Config.user.__getUserID();
+      if (!isEmptyObject(IC.Config.user.__getAttributes())) {
+        registrationData.attributes = IC.Config.user.__getAttributes();
+      }
+      return registrationData
+    }
+  }
+  IC.Utils = new __ICUtils;
+
+  __ICRESTInvoker = function(applaunchURL, applaunchMethod) {
+    var url = applaunchURL;
+    var xmlHttp = new XMLHttpRequest();
+    var method = applaunchMethod;
+    var callBack;
+    var json = {};
+    var headers = {};
+
+    this.execute = function() {
+      xmlHttp.onreadystatechange = function() {
+        if (xmlHttp.readyState == 4) {
+          callback(xmlHttp);
+        }
+      }
+      xmlHttp.open(method, url, true); // true for asynchronous
+      xmlHttp.setRequestHeader('Content-Type', 'application/json; charset = UTF-8');
+      xmlHttp.send(JSON.stringify(json));
+    }
+
+    this.setCallBack = function(callback){
+      this.callBack = callback;
+    }
+
+    this.setJSONRequestBody = function(json) {
+      this.json = json;
+    }
+
+    this.addHeader = function (headerName, headerValue) {
+      xmlHttp.setRequestHeader(headerName, headerValue);
+    }
+  }
 
   __URLBuilder = function(appLaunchRegion, appLaunchAppID, appLaunchDeviceID) {
     const baseURL = 'https://applaunch' + region + '/applaunch/v1'
@@ -370,28 +442,76 @@
     const deviceID = appLaunchDeviceID
 
     this.__getAppRegistrationURL = function(){
-        return this.baseURL + '/apps/' + this.applicationID + '/devices'
+      return this.baseURL + '/apps/' + this.applicationID + '/devices'
     }
 
     this.__getUserURL = function() {
-        return this.__getAppRegistrationURL() + '/' + this.deviceID
+      return this.__getAppRegistrationURL() + '/' + this.deviceID
     }
 
     this.__getActionURL = function() {
-        return this.__getAppRegistrationURL() + '/' + this.deviceID + '/actions'
+      return this.__getAppRegistrationURL() + '/' + this.deviceID + '/actions'
     }
 
     this.__getMetricsURL = function() {
-        return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/metrics'
+      return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/metrics'
     }
 
     this.__getSessionURL = function() {
-        return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/sessionActivity'
+      return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/sessionActivity'
     }
   }
 
-  __registerDevice = function() {
-    
+  __registerDevice = function(dfd) {
+    if(IC.Utils.__IsUserNeedsToBeRegistered() && IC.Utils.__IsUserNeedsToBeReRegistered()) {
+      // User Already Registered, Proceed with getActions Call
+      __getActions(dfd);
+    }
+    else {
+      var method = 'POST';
+      var requestURL = IC.URLBuilder.__getAppRegistrationURL();
+      var registrationData = IC.Utils.__getRegistrationData();
+      if (IC.Utils.isUpdateRegistrationRequired()) {
+        // Update Registration Call
+        method = 'PUT'
+        requestURL = IC.URLBuilder.__getAppRegistrationURL();
+        registrationData = IC.Utils.__getUpdateRegistrationData();
+      }
+      var request = __ICRESTInvoker(requestURL, method);
+      request.addHeader('Content-Type','application/json; charset = UTF-8');
+      request.addHeader('clientSecret', IC.Config.config.__getClientSecret())
+      request.setCallBack(function(response){
+        if(response.status == 202) {
+          IC.config.isInitialized = true;
+          __getActions(dfd);
+        } else {
+          IC.config.isInitialized = false;
+          //TODO: Save User Context
+          dfd.reject("Registration Failure");
+        }
+      });
+      request.setJSONRequestBody(registrationData);
+      request.execute();
+    }
+  }
+
+  __getActions = function(dfd) {
+    __refreshActions(dfd);
+  }
+
+  __refreshActions = function(dfd) {
+    var method = 'GET';
+    var requestURL = IC.URLBuilder.__getActionURL();
+    var request = __ICRESTInvoker(requestURL, method);
+    request.addHeader('clientSecret', IC.Config.config.__getClientSecret())
+    request.setCallBack(function(response){
+      if(response.status == 200) {
+        // save actions
+      } else {
+        dfd.reject("Actions Failure");
+      }
+    });
+    request.execute();
   }
 
   function _appLaunchConfig() {
@@ -399,6 +519,7 @@
     this.deviceID = null;
     this.cacheExpiration = null;
     this.eventFlushInterval = null;
+    this.clientSecret = null;
 
     this.__getPolicy= function() {
       return policy;
@@ -414,6 +535,14 @@
 
     this.__getEventFlushInterval= function() {
       return eventFlushInterval;
+    }
+
+    this.__getClientSecret= function() {
+      return clientSecret;
+    }
+
+    this.__setClientSecret= function(secret) {
+      clientSecret = secret;
     }
 
     this.Builder = function() {
@@ -490,30 +619,13 @@
     var dfd = BMSJQ.Deferred();
     if(validateString(ICRegion) && validateString(appGUID) && validateString(clientSecret) && validateString(appLaunchUser.userID)) {
       var builder = new __URLBuilder(ICRegion, appGUID, appLaunchUser.__getDeviceID());
+      appLaunchConfig.__setClientSecret = clientSecret;
       IC.Config.__setConfig(appLaunchConfig);
       IC.Config.__setUser(appLaunchUser);
       IC.Config.__setURLBuilder(builder);
-      __registerDevice();
-      dfd.resolve("Success")
+      __registerDevice(dfd);
     } else {
       dfd.reject('AppLaunch is not Initialized')
-    }
-
-    if AppLaunchUtils.validateString(object: clientSecret) &&  AppLaunchUtils.validateString(object: appId) && AppLaunchUtils.validateString(object: user.getUserId() ){
-      config.setICRegion(region.rawValue)
-      config.setAppID(appId)
-      config.setClientSecret(clientSecret)
-      self.config = config
-      self.user = user
-      self.URLBuilder = AppLaunchURLBuilder(config.getICRegion(), config.getAppID(), config.getDeviceID())
-      AppLaunchCacheManager.sharedInstance.loadDefaultFeatures(completionHandler)
-      IntializeSession()
-      //Register User
-      registerDevice(completionHandler)
-      isInitialized = true
-    }
-    else{
-      completionHandler(nil, AppLaunchFailResponse(.INITIALIZATION_FAILURE, MSG__CLIENT_OR_APPID_NOT_VALID))
     }
     return dfd.promise();
   }
