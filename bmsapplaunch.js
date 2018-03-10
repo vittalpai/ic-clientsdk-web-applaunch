@@ -20,7 +20,7 @@
         }
       }
       else
-      handler(arr);
+        handler(arr);
     }
 
     function D(fn) {
@@ -179,7 +179,7 @@
                   if (returnval && typeof returnval === 'function') {
                     returnval.promise().then(def.resolve, def.reject, def.notify);
                   }
-                  else {	// if new return val is passed, it is passed to the piped done
+                  else {  // if new return val is passed, it is passed to the piped done
                     def.resolve(returnval);
                   }
                 });
@@ -279,7 +279,7 @@
           var df = D(),
           size = args.length,
           done = 0,
-          rp = new Array(size);	// resolve params: params of each resolve, we need to track down them to be able to pass them in the correct order if the master needs to be resolved
+          rp = new Array(size); // resolve params: params of each resolve, we need to track down them to be able to pass them in the correct order if the master needs to be resolved
 
           for (var i = 0; i < args.length; i++) {
             (function(j) {
@@ -319,25 +319,28 @@
   })(window);
 
   var IC = IC ? IC : {};
-  // Utils
-  function validateString(str) {
-    if (typeof str == 'undefined' || !str || str.length === 0 || str === "" || !/[^\s]/.test(str) || /^\s*$/.test(str) || str.replace(/\s/g,"") === "")
-    {
-      return true;
-    }
-    else
-    {
-      return false;
-    }
-  }
+  // variables
+  var icregion = { 
+    US_SOUTH : ".ng.bluemix.net",
+    UNITED_KINGDOM : ".eu-gb.bluemix.net",
+    SYDNEY : " .au-syd.bluemix.net",
+    US_SOUTH_STAGING : ".stage1.ng.bluemix.net",
+    UNITED_KINGDOM_STAGING : ".stage1.eu-gb.bluemix.net",
+    US_SOUTH_DEV : "dev.ng.bluemix.net"
+  };
 
-  function isEmptyObject(obj) {
-    for(var prop in obj) {
-      if(obj.hasOwnProperty(prop))
-      return false;
-    }
-    return JSON.stringify(obj) === JSON.stringify({});
-  }
+  var errorCode = {
+    INITIALIZATION_FAILURE: 0,
+    REGISTRATION_FAILURE: 1,
+    FETCH_ACTIONS_FAILURE: 2,
+    DEFAULT_FEATURE_LOAD_FAILURE: 3,
+    UNREGISTRATION_FAILURE: 4
+  };
+
+  var ICAppLaunchFeatures = {};
+
+  var ICAppLaunchInAppMessages = {};
+  
   // private methods
   __ICConfig = function() {
     /*jshint strict:false, maxparams:4*/
@@ -347,46 +350,50 @@
     var isInitialized = false; //default value
 
     this.__getConfig= function() {
-      return config;
+      return this.config;
     }
 
     this.__setConfig=function(appConfig) {
-      config = appConfig;
+      this.config = appConfig;
     }
 
     this.__getUser= function() {
-      return user;
+      return this.user;
     }
 
     this.__setUser= function(userObj) {
-      user = userObj;
+      this.user = userObj;
     }
 
     this.__getURLBuilder= function() {
-      return URLBuilder;
+      return this.URLBuilder;
     }
 
     this.__setURLBuilder=function(builder) {
-      URLBuilder = builder;
+      this.URLBuilder = builder;
     }
   };
   IC.Config = new __ICConfig;
 
   __ICUtils = function() {
     this.__IsUserNeedsToBeRegistered = function() {
-      return true;
+      return false;
     }
 
     this.__IsUserNeedsToBeReRegistered = function() {
-      return true;
+      return false;
+    }
+
+    this.__IsUpdateRegistrationRequired = function() {
+      return false;
     }
 
     this.__getRegistrationData = function() {
       var registrationData = {};
       registrationData.deviceId = IC.Config.config.__getDeviceID();
-      registrationData.platform = 'w'
+      registrationData.platform = 'A'
       registrationData.userId = IC.Config.user.__getUserID();
-      if (!isEmptyObject(IC.Config.user.__getAttributes())) {
+      if (!IC.Config.__isEmptyObject(IC.Config.user.__getAttributes())) {
         registrationData.attributes = IC.Config.user.__getAttributes();
       }
       return registrationData
@@ -394,100 +401,146 @@
 
     this.__getUpdateRegistrationData = function() {
       var registrationData = {};
-      registrationData.platform = 'w'
+      registrationData.platform = 'A'
       registrationData.userId = IC.Config.user.__getUserID();
-      if (!isEmptyObject(IC.Config.user.__getAttributes())) {
+      if (!IC.Config.__isEmptyObject(IC.Config.user.__getAttributes())) {
         registrationData.attributes = IC.Config.user.__getAttributes();
       }
-      return registrationData
+      return registrationData;
+    }
+
+    this.__generateSuccessResponse = function(actions) {
+      var response = {};
+      response.responseJSON = actions;
+      return response;
+    }
+
+    this.__generateFailureResponse = function(errorCode, errorMessage) {
+      var response = {};
+      response.errorCode = errorCode;
+      response.errorMessage = errorMessage;
+      return response;
+    }
+
+    this.__isValidArray = function(array) {
+      if(typeof array != "undefined" && array != null && array.length != null && array.length > 0){
+        return true;
+      }
+      return false;
+    }
+
+    this.__validateString = function(str) {
+      if (typeof str == 'undefined' || !str || str.length === 0 || str === "" || !/[^\s]/.test(str) || /^\s*$/.test(str) || str.replace(/\s/g,"") === "")
+      {
+        return false;
+      }
+      return true;
+    }
+
+    this.__isEmptyObject = function(obj) {
+      for(var prop in obj) {
+        if(obj.hasOwnProperty(prop))
+          return false;
+      }
+      return JSON.stringify(obj) === JSON.stringify({});
     }
   }
   IC.Utils = new __ICUtils;
 
   __ICRESTInvoker = function(applaunchURL, applaunchMethod) {
-    var url = applaunchURL;
-    var xmlHttp = new XMLHttpRequest();
-    var method = applaunchMethod;
-    var callBack;
-    var json = {};
-    var headers = {};
+    this.url = applaunchURL;
+    this.method = applaunchMethod;
+    this.callBack;
+    this.json = {};
+    this.headers = {};
+  }
 
-    this.execute = function() {
-      xmlHttp.onreadystatechange = function() {
-        if (xmlHttp.readyState == 4) {
-          callback(xmlHttp);
-        }
+  __ICRESTInvoker.prototype = {
+    execute : function() {
+      var callBack = this.callBack;
+      var xmlHttp = new XMLHttpRequest();
+      xmlHttp.open(this.method, this.url, true); // true for asynchronous
+      xmlHttp.onload = function () {
+       callBack(xmlHttp);
+     };
+     xmlHttp.onerror = function () {
+      callBack(xmlHttp);
+    };
+    for (var key in this.headers) {
+      if (this.headers.hasOwnProperty(key)) {
+        xmlHttp.setRequestHeader(key,this.headers[key]);
       }
-      xmlHttp.open(method, url, true); // true for asynchronous
-      xmlHttp.setRequestHeader('Content-Type', 'application/json; charset = UTF-8');
-      xmlHttp.send(JSON.stringify(json));
     }
+    xmlHttp.send(JSON.stringify(this.json));
+  },
 
-    this.setCallBack = function(callback){
-      this.callBack = callback;
-    }
+  setCallBack : function(value){
+    this.callBack = value;
+  },
 
-    this.setJSONRequestBody = function(json) {
-      this.json = json;
-    }
+  setJSONRequestBody : function(data) {
+    this.json = data;
+  },
 
-    this.addHeader = function (headerName, headerValue) {
-      xmlHttp.setRequestHeader(headerName, headerValue);
-    }
+  addHeader : function (headerName, headerValue) {
+    this.headers[headerName] = headerValue;
   }
+}
 
-  __URLBuilder = function(appLaunchRegion, appLaunchAppID, appLaunchDeviceID) {
-    const baseURL = 'https://applaunch' + region + '/applaunch/v1'
-    const appID = appLaunchAppID
-    const deviceID = appLaunchDeviceID
+__URLBuilder = function(appLaunchRegion, appLaunchAppID, appLaunchDeviceID) {
+  this.baseURL = 'https://applaunch' + appLaunchRegion + '/applaunch/v1'
+  this.appID = appLaunchAppID
+  this.deviceID = appLaunchDeviceID
+}
 
-    this.__getAppRegistrationURL = function(){
-      return this.baseURL + '/apps/' + this.applicationID + '/devices'
-    }
+__URLBuilder.prototype = {
+  __getAppRegistrationURL : function(){
+    return this.baseURL + '/apps/' + this.appID + '/devices'
+  },
 
-    this.__getUserURL = function() {
-      return this.__getAppRegistrationURL() + '/' + this.deviceID
-    }
+  __getUserURL : function() {
+    return this.__getAppRegistrationURL() + '/' + this.deviceID
+  },
 
-    this.__getActionURL = function() {
-      return this.__getAppRegistrationURL() + '/' + this.deviceID + '/actions'
-    }
+  __getActionURL : function() {
+    return this.__getAppRegistrationURL() + '/' + this.deviceID + '/actions'
+  },
 
-    this.__getMetricsURL = function() {
-      return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/metrics'
-    }
+  __getMetricsURL : function() {
+    return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/metrics'
+  },
 
-    this.__getSessionURL = function() {
-      return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/sessionActivity'
-    }
+  __getSessionURL : function() {
+    return this.__getAppRegistrationURL() + '/' + this.deviceID + '/events/sessionActivity'
   }
+}
 
-  __registerDevice = function(dfd) {
-    if(IC.Utils.__IsUserNeedsToBeRegistered() && IC.Utils.__IsUserNeedsToBeReRegistered()) {
+__registerDevice = function(dfd) {
+  if(IC.Utils.__IsUserNeedsToBeRegistered() && IC.Utils.__IsUserNeedsToBeReRegistered()) {
       // User Already Registered, Proceed with getActions Call
       __getActions(dfd);
     }
     else {
       var method = 'POST';
-      var requestURL = IC.URLBuilder.__getAppRegistrationURL();
+      var requestURL = IC.Config.__getURLBuilder().__getAppRegistrationURL();
       var registrationData = IC.Utils.__getRegistrationData();
-      if (IC.Utils.isUpdateRegistrationRequired()) {
+      if (IC.Utils.__IsUpdateRegistrationRequired()) {
         // Update Registration Call
         method = 'PUT'
-        requestURL = IC.URLBuilder.__getAppRegistrationURL();
+        requestURL = IC.Config.__getURLBuilder().__getAppRegistrationURL();
         registrationData = IC.Utils.__getUpdateRegistrationData();
       }
-      var request = __ICRESTInvoker(requestURL, method);
+      var request = new __ICRESTInvoker(requestURL, method);
       request.addHeader('Content-Type','application/json; charset = UTF-8');
       request.addHeader('clientSecret', IC.Config.config.__getClientSecret())
-      request.setCallBack(function(response){
+      request.setCallBack(function(response) {
         if(response.status == 202) {
-          IC.config.isInitialized = true;
+          IC.Config.isInitialized = true;
+          //TODO: Save User Context
           __getActions(dfd);
         } else {
-          IC.config.isInitialized = false;
-          //TODO: Save User Context
-          dfd.reject("Registration Failure");
+          IC.Config.isInitialized = false;
+          dfd.reject(IC.Utils.__generateFailureResponse(errorCode.REGISTRATION_FAILURE, response.response));
         }
       });
       request.setJSONRequestBody(registrationData);
@@ -501,20 +554,24 @@
 
   __refreshActions = function(dfd) {
     var method = 'GET';
-    var requestURL = IC.URLBuilder.__getActionURL();
-    var request = __ICRESTInvoker(requestURL, method);
+    var requestURL = IC.Config.__getURLBuilder().__getActionURL();
+    var request = new __ICRESTInvoker(requestURL, method);
     request.addHeader('clientSecret', IC.Config.config.__getClientSecret())
-    request.setCallBack(function(response){
-      if(response.status == 200) {
+    request.setCallBack(function(data){
+      if(data.status == 200) {
         // save actions
+        var json = JSON.parse(data.response)
+        ICAppLaunchFeatures = json.features;
+        ICAppLaunchInAppMessages = json.inApp;
+        dfd.resolve(IC.Utils.__generateSuccessResponse(json));
       } else {
-        dfd.reject("Actions Failure");
+        dfd.reject(IC.Utils.__generateFailureResponse(errorCode.FETCH_ACTIONS_FAILURE, data.response));
       }
     });
     request.execute();
   }
 
-  function _appLaunchConfig() {
+  function __appLaunchConfig() {
     this.policy = null;
     this.deviceID = null;
     this.cacheExpiration = null;
@@ -522,104 +579,98 @@
     this.clientSecret = null;
 
     this.__getPolicy= function() {
-      return policy;
+      return this.policy;
     }
 
     this.__getDeviceID= function() {
-      return deviceID;
+      return this.deviceID;
     }
 
     this.__getCacheExpiration= function() {
-      return cacheExpiration;
+      return this.cacheExpiration;
     }
 
     this.__getEventFlushInterval= function() {
-      return eventFlushInterval;
+      return this.eventFlushInterval;
     }
 
     this.__getClientSecret= function() {
-      return clientSecret;
+      return this.clientSecret;
     }
-
-    this.__setClientSecret= function(secret) {
-      clientSecret = secret;
-    }
-
-    this.Builder = function() {
-      var policy = null;
-      var deviceID = null;
-      var cacheExpiration = 30;
-      var eventFlushInterval = 30;
-
-      return {
-        fetchPolicy : function(refreshPolicy) {
-          this.policy = refreshPolicy;
-          return this;
-        },
-        cacheExpiration : function(cacheExpiration) {
-          this.cacheExpiration = cacheExpiration;
-          return this;
-        },
-        eventFlushInterval : function(eventFlushInterval) {
-          this.eventFlushInterval = eventFlushInterval;
-          return this;
-        },
-        deviceID : function(deviceID) {
-          this.deviceID = deviceID;
-          return this;
-        },
-        build : function() {
-          var config = new appLaunchConfig();
-          config.policy = policy;
-          config.deviceID = deviceID;
-          config.cacheExpiration = cacheExpiration;
-          config.eventFlushInterval = eventFlushInterval;
-          return config
-        }
-      };
-    };
   };
 
-  function _appLaunchUser() {
+  var __appLaunchConfigBuilder = function() {
+    var policy = null;
+    var deviceID = null;
+    var cacheExpiration = 30;
+    var eventFlushInterval = 30;
+
+    this.fetchPolicy = function(refreshPolicy) {
+      this.policy = refreshPolicy;
+      return this;
+    }
+    this.cacheExpiration = function(cacheExpiration) {
+      this.cacheExpiration = cacheExpiration;
+      return this;
+    }
+    this.eventFlushInterval = function(eventFlushInterval) {
+      this.eventFlushInterval = eventFlushInterval;
+      return this;
+    }
+    this.deviceID = function(deviceID) {
+      this.deviceID = deviceID;
+      return this;
+    }
+    this.build = function() {
+      var config = new __appLaunchConfig();
+      config.policy = this.policy;
+      config.deviceID = this.deviceID;
+      config.cacheExpiration = this.cacheExpiration;
+      config.eventFlushInterval = this.eventFlushInterval;
+      return config
+    }
+  };
+
+  function __appLaunchUser() {
     this.userID = null;
     this.attributes = {};
 
     this.__getUserID= function() {
-      return userID;
+      return this.userID;
     }
 
     this.__getAttributes= function() {
-      return attributes;
+      return this.attributes;
     }
-
-    this.Builder = function() {
-      var userID = null;
-      var attributes = {};
-
-      return {
-        userID : function(username) {
-          userID = username;
-          return this;
-        },
-        attributes : function(key, value) {
-          attributes[key] = value;
-          return this;
-        },
-        build : function() {
-          var user = new appLaunchUser();
-          user.userID = userID;
-          user.attributes = attributes;
-          return user;
-        }
-      };
-    };
   };
 
-  function _initialize(ICRegion, appGUID, clientSecret, appLaunchConfig, appLaunchUser) {
+  var __appLaunchUserBuilder = function() {
+    var userID = null;
+    var attributes = {};
+
+    this.userID = function(username) {
+      this.userID = username;
+      return this;
+    }
+
+    this.attributes = function(key, value) {
+      this.attributes[key] = value;
+      return this;
+    }
+
+    this.build = function() {
+      var user = new __appLaunchUser();
+      user.userID = this.userID;
+      user.attributes = this.attributes;
+      return user;
+    }
+  };
+
+  function __initialize(ICRegion, appGUID, clientSecret, appLaunchConfig, appLaunchUser) {
     var dfd = BMSJQ.Deferred();
-    if(validateString(ICRegion) && validateString(appGUID) && validateString(clientSecret) && validateString(appLaunchUser.userID)) {
-      var builder = new __URLBuilder(ICRegion, appGUID, appLaunchUser.__getDeviceID());
-      appLaunchConfig.__setClientSecret = clientSecret;
+    if(IC.Utils.__validateString(ICRegion) && IC.Utils.__validateString(appGUID) && IC.Utils.__validateString(clientSecret) && IC.Utils.__validateString(appLaunchUser.userID)) {
+      var builder = new __URLBuilder(ICRegion, appGUID, appLaunchConfig.__getDeviceID());
+      appLaunchConfig.clientSecret = clientSecret;
       IC.Config.__setConfig(appLaunchConfig);
       IC.Config.__setUser(appLaunchUser);
       IC.Config.__setURLBuilder(builder);
@@ -635,29 +686,73 @@
     return dfd.promise();
   }
 
-  function _isFeatureEnabled(featureCode) {
-    return true
+  function __isFeatureEnabled(featureCode) {
+    if(IC.Config.isInitialized) {
+      for (var i = 0; i < ICAppLaunchFeatures.length; i++) {
+        if(ICAppLaunchFeatures[i].code == featureCode)
+          return true;
+      }
+    }
+    return false;
   }
 
-  function _getPropertyofFeature(featureCode, propertyCode) {
+  function __getPropertyofFeature(featureCode, propertyCode) {
+    if(IC.Config.isInitialized) {
+      for (var i = 0; i < ICAppLaunchFeatures.length; i++) {
+        if(ICAppLaunchFeatures[i].code == featureCode) {
+          var properties = ICAppLaunchFeatures[i].properties
+          for (var j=0; j < properties.length; j++) {
+            if(properties[j].code == propertyCode) {
+              return properties[j].value
+            }
+          }
+        }
+      }
+    }
     return "";
   }
 
   function _displayInAppMessages() {
   }
 
-  function _sendMetrics(codes) {
+  function __sendMetrics(codes) {
+    if(IC.Config.isInitialized) {
+      if(IC.Utils.__isValidArray(codes)) {
+        var method = 'POST';
+        var requestURL = IC.Config.__getURLBuilder().__getMetricsURL();
+        var metricsData = {};
+        metricsData.metricCodes = codes;
+        var request = new __ICRESTInvoker(requestURL, method);
+        request.addHeader('Content-Type','application/json; charset = UTF-8');
+        request.addHeader('clientSecret', IC.Config.config.__getClientSecret());
+        request.setCallBack(function(response) {
+          if(response.status == 202) {
+           console.log("sent metrics successfully for the code(s) : " + codes.toString());
+         } else {
+          console.log("Error in sending metrics for the code(s) : " + codes.toString());
+        }
+      });
+        request.setJSONRequestBody(metricsData);
+        request.execute();
+      }
+      else {
+        console.log("Metric codes is not an valid array/empty")
+      }
+    } else {
+      console.log("AppLaunch is not Initialized");
+    }
   }
 
   // exposed public method
   return {
-    initialize: _initialize,
+    initialize: __initialize,
+    ICRegion: icregion,
     destroy: _destroy,
-    AppLaunchConfig: _appLaunchConfig,
-    AppLaunchUser: _appLaunchUser,
-    sendMetrics: _sendMetrics,
-    isFeatureEnabled: _isFeatureEnabled,
-    getPropertyofFeature: _getPropertyofFeature,
+    AppLaunchConfigBuilder: __appLaunchConfigBuilder,
+    AppLaunchUserBuilder: __appLaunchUserBuilder,
+    sendMetrics: __sendMetrics,
+    isFeatureEnabled: __isFeatureEnabled,
+    getPropertyofFeature: __getPropertyofFeature,
     displayInAppMessages: _displayInAppMessages
   }
 }));
