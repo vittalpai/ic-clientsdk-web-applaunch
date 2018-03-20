@@ -179,7 +179,7 @@
                   if (returnval && typeof returnval === 'function') {
                     returnval.promise().then(def.resolve, def.reject, def.notify);
                   }
-                  else {  // if new return val is passed, it is passed to the piped done
+                  else {	// if new return val is passed, it is passed to the piped done
                     def.resolve(returnval);
                   }
                 });
@@ -279,7 +279,7 @@
           var df = D(),
           size = args.length,
           done = 0,
-          rp = new Array(size); // resolve params: params of each resolve, we need to track down them to be able to pass them in the correct order if the master needs to be resolved
+          rp = new Array(size);	// resolve params: params of each resolve, we need to track down them to be able to pass them in the correct order if the master needs to be resolved
 
           for (var i = 0; i < args.length; i++) {
             (function(j) {
@@ -312,12 +312,13 @@
     }
 
     global.Deferred = D;
-    global.BMSJQ = D;
-    global.BMSJQ.Deferred = function () {
+    global.ICJQ = D;
+    global.ICJQ.Deferred = function () {
       return new Deferred();
     }
   })(window);
 
+  function __IC() {}
   var IC = IC ? IC : {};
   // variables
   var icregion = { 
@@ -326,7 +327,7 @@
     SYDNEY : " .au-syd.bluemix.net",
     US_SOUTH_STAGING : ".stage1.ng.bluemix.net",
     UNITED_KINGDOM_STAGING : ".stage1.eu-gb.bluemix.net",
-    US_SOUTH_DEV : "dev.ng.bluemix.net"
+    US_SOUTH_DEV : ".dev.ng.bluemix.net"
   };
 
   var errorCode = {
@@ -342,12 +343,219 @@
   var ICAppLaunchInAppMessages = {};
   
   // private methods
-  __ICConfig = function() {
+  __ICLocalStorageDB = function() {
     /*jshint strict:false, maxparams:4*/
-    var config;
-    var user;
-    var URLBuilder;
-    var isInitialized = false; //default value
+
+    var appNamePrefix;
+
+    // By Default, we work with localStorage, unless it is changed during a set/get
+    var storage = window.localStorage;
+
+     /**
+     * Initializes the database and verifies it is accessible
+     * @returns {*}
+     */
+     this.init = function() {
+      appNamePrefix = IC.Config.__getApplicationName();
+    };
+
+    /**
+     * Sets an item in the database
+     * @param key
+     * @param value
+     * @param options {{session : boolean, global : boolean}}
+     * @returns {*}
+     */
+     this.setItem = function(key, value, options) {
+      var finalOptions = initOptions(options);
+      var finalKey = buildKey(key, finalOptions);
+      var finalValue = value ? JSON.stringify(value) : null;
+      storage.setItem(finalKey, finalValue);
+    };
+
+    /**
+     * Gets an item in the database
+     * @param key
+     * @param options {{session : boolean, global : boolean}}
+     * @returns {string - JSON representation of value for given key}
+     */
+     this.getItem = function(key, options) {
+      var finalOptions = initOptions(options);
+      var finalKey = buildKey(key, finalOptions);
+      var value = storage.getItem(finalKey);
+      return value ? JSON.parse(value) : null;
+    };
+
+    /**
+     * Removes an item in the database
+     * @param key
+     * @param options {{session : boolean, global : boolean}}
+     * @returns {*}
+     */
+     this.removeItem = function(key, options) {
+      var finalOptions = initOptions(options);
+      var finalKey = buildKey(key, finalOptions);
+      storage.removeItem(finalKey);
+    };
+
+    /**
+     * Takes the options the user entered (if any) and appends them to the default
+     * options, overriding the default values
+     * @param userOptions
+     * @returns {{global: boolean, session: boolean}}
+     */
+     function initOptions(userOptions) {
+      var options = {
+        'session' : false,
+        'global' : false
+      };
+      for (var property in userOptions) {
+        options[property] = userOptions[property];
+      }
+
+        // Init the storage
+        storage = options.session ? window.sessionStorage : window.localStorage;
+
+        return options;
+      }
+
+      function buildKey(key, options) {
+        return options.global ? key : appNamePrefix + '.' + key;
+      }
+    };
+
+//+++
+IC.LocalStorageDB = new __ICLocalStorageDB();
+
+__ICVarStorageDB = function() {
+
+  var appNamePrefix;
+  var storage = {};
+
+  /**
+     * Initializes the database and verifies it is accessible
+     * @returns {*}
+     */
+     this.init = function() {
+      appNamePrefix = IC.Config.__getApplicationName();
+    };
+
+    /**
+     * Sets an item in the Database
+     * @param key
+     * @param value
+     * @returns {*}
+     */
+     this.setItem = function(key, value) {
+      var finalKey = buildKey(key);
+      var finalValue = value ? JSON.stringify(value) : null;
+      storage[finalKey] = finalValue;
+    };
+
+    /**
+     * Gets an item in the Database
+     * @param key
+     * @returns {string - JSON representation of value for given key}
+     */
+     this.getItem = function(key) {
+      var finalKey = buildKey(key);
+      value = storage[finalKey];
+      return value ? JSON.parse(value) : null;
+    };
+
+  /**
+     * Removes an item in the database
+     * @param key
+     * @returns {*}
+     */
+     this.removeItem = function(key) {
+      var finalKey = buildKey(key);
+      delete storage[finalKey];
+    };
+
+
+   // Builds the key with the appName prefeix
+   function buildKey(key) {
+    return appNamePrefix + '.' + key;
+  }
+};
+
+
+__ICDAO = function() {
+  var dao;
+
+  /**
+   * Initializes the database and verifies it is accessible
+   *
+   * @returns {*}
+   */
+   this.init = function() {
+    try {
+      dao = new __ICLocalStorageDB();
+      dao.init();
+      dao.setItem("testKey", "testValue");
+      if (dao.getItem("testKey") == "testValue") {
+        dao.removeItem("testKey");
+      } else {
+        throw "LocalStorage Error";
+      }
+    } catch (e) {
+      dao = new __ICVarStorageDB();
+      dao.init();
+    }
+  };
+
+  /**
+   * Sets an item in the database
+   *
+   * @param key
+   * @param value
+   * @param options
+   *            {{session : boolean, global : boolean}} - NOTE: When local storage
+   *            is not available (e.g. Safari private mode) all data will be
+   *            saved as session storage (regardless of options parameter);
+   * @returns {*}
+   */
+   this.setItem = function(key, value, options) {
+    dao.setItem(key, value, options);
+  }
+
+  /**
+   * Gets an item in the database
+   *
+   * @param key
+   * @param options
+   *            {{session : boolean, global : boolean}}
+   * @returns {value for given key}
+   */
+   this.getItem = function(key, options) {
+    return dao.getItem(key, options);
+  }
+
+  /**
+   * Removes an item in the database
+   *
+   * @param key
+   * @param options
+   *            {{session : boolean, global : boolean}}
+   * @returns {*}
+   */
+   this.removeItem = function(key, options) {
+    dao.removeItem(key, options);
+  }
+};
+
+//+++
+__IC.prototype.DAO = new __ICDAO;
+IC.DAO = new __ICDAO;
+
+__ICConfig = function() {
+  /*jshint strict:false, maxparams:4*/
+  var config;
+  var user;
+  var URLBuilder;
+  var applicationName;
+  var isInitialized = false; //default value
 
     this.__getConfig= function() {
       return this.config;
@@ -372,6 +580,15 @@
     this.__setURLBuilder=function(builder) {
       this.URLBuilder = builder;
     }
+
+    this.__getApplicationName = function() {
+        return applicationName;
+    };
+
+    this.__setApplicationName = function(app) {
+        applicationName = app;
+    };
+
   };
   IC.Config = new __ICConfig;
 
@@ -391,9 +608,10 @@
     this.__getRegistrationData = function() {
       var registrationData = {};
       registrationData.deviceId = IC.Config.config.__getDeviceID();
-      registrationData.platform = 'A'
+      registrationData.platform = 'Web';
+      registrationData.os = 'Chrome';
       registrationData.userId = IC.Config.user.__getUserID();
-      if (!IC.Config.__isEmptyObject(IC.Config.user.__getAttributes())) {
+      if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
         registrationData.attributes = IC.Config.user.__getAttributes();
       }
       return registrationData
@@ -403,7 +621,7 @@
       var registrationData = {};
       registrationData.platform = 'A'
       registrationData.userId = IC.Config.user.__getUserID();
-      if (!IC.Config.__isEmptyObject(IC.Config.user.__getAttributes())) {
+      if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
         registrationData.attributes = IC.Config.user.__getAttributes();
       }
       return registrationData;
@@ -495,7 +713,7 @@ __URLBuilder = function(appLaunchRegion, appLaunchAppID, appLaunchDeviceID) {
 
 __URLBuilder.prototype = {
   __getAppRegistrationURL : function(){
-    return this.baseURL + '/apps/' + this.appID + '/devices'
+    return 'https://mobileservices-dev.us-south.containers.mybluemix.net/applaunch/v1/apps/' + this.appID + '/devices'
   },
 
   __getUserURL : function() {
@@ -667,22 +885,24 @@ __registerDevice = function(dfd) {
   };
 
   function __initialize(ICRegion, appGUID, clientSecret, appLaunchConfig, appLaunchUser) {
-    var dfd = BMSJQ.Deferred();
+    var dfd = ICJQ.Deferred();
     if(IC.Utils.__validateString(ICRegion) && IC.Utils.__validateString(appGUID) && IC.Utils.__validateString(clientSecret) && IC.Utils.__validateString(appLaunchUser.userID)) {
       var builder = new __URLBuilder(ICRegion, appGUID, appLaunchConfig.__getDeviceID());
       appLaunchConfig.clientSecret = clientSecret;
       IC.Config.__setConfig(appLaunchConfig);
       IC.Config.__setUser(appLaunchUser);
       IC.Config.__setURLBuilder(builder);
+      IC.Config.__setApplicationName(appGUID);
+      IC.DAO.init();
       __registerDevice(dfd);
     } else {
-      dfd.reject('AppLaunch is not Initialized')
+      dfd.reject(IC.Utils.__generateFailureResponse(errorCode.INITIALIZATION_FAILURE,'AppLaunch is not Initialized'));
     }
     return dfd.promise();
   }
 
   function _destroy() {
-    var dfd = BMSJQ.Deferred();
+    var dfd = ICJQ.Deferred();
     return dfd.promise();
   }
 
