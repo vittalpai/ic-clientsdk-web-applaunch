@@ -338,10 +338,6 @@
     UNREGISTRATION_FAILURE: 4
   };
 
-  var ICAppLaunchFeatures = {};
-
-  var ICAppLaunchInAppMessages = {};
-  
   // private methods
   __ICLocalStorageDB = function() {
     /*jshint strict:false, maxparams:4*/
@@ -366,8 +362,8 @@
      * @param options {{session : boolean, global : boolean}}
      * @returns {*}
      */
-     this.setItem = function(key, value, options) {
-      var finalOptions = initOptions(options);
+     this.setItem = function(key, value) {
+      var finalOptions = initOptions({});
       var finalKey = buildKey(key, finalOptions);
       var finalValue = value ? JSON.stringify(value) : null;
       storage.setItem(finalKey, finalValue);
@@ -379,8 +375,8 @@
      * @param options {{session : boolean, global : boolean}}
      * @returns {string - JSON representation of value for given key}
      */
-     this.getItem = function(key, options) {
-      var finalOptions = initOptions(options);
+     this.getItem = function(key) {
+      var finalOptions = initOptions({});
       var finalKey = buildKey(key, finalOptions);
       var value = storage.getItem(finalKey);
       return value ? JSON.parse(value) : null;
@@ -392,8 +388,8 @@
      * @param options {{session : boolean, global : boolean}}
      * @returns {*}
      */
-     this.removeItem = function(key, options) {
-      var finalOptions = initOptions(options);
+     this.removeItem = function(key) {
+      var finalOptions = initOptions({});
       var finalKey = buildKey(key, finalOptions);
       storage.removeItem(finalKey);
     };
@@ -516,8 +512,8 @@ __ICDAO = function() {
    *            saved as session storage (regardless of options parameter);
    * @returns {*}
    */
-   this.setItem = function(key, value, options) {
-    dao.setItem(key, value, options);
+   this.setItem = function(key, value) {
+    dao.setItem(key, value);
   }
 
   /**
@@ -528,8 +524,8 @@ __ICDAO = function() {
    *            {{session : boolean, global : boolean}}
    * @returns {value for given key}
    */
-   this.getItem = function(key, options) {
-    return dao.getItem(key, options);
+   this.getItem = function(key) {
+    return dao.getItem(key);
   }
 
   /**
@@ -540,8 +536,8 @@ __ICDAO = function() {
    *            {{session : boolean, global : boolean}}
    * @returns {*}
    */
-   this.removeItem = function(key, options) {
-    dao.removeItem(key, options);
+   this.removeItem = function(key) {
+    dao.removeItem(key);
   }
 };
 
@@ -555,128 +551,171 @@ __ICConfig = function() {
   var user;
   var URLBuilder;
   var applicationName;
+  var applicationRegion;
   var isInitialized = false; //default value
 
-    this.__getConfig= function() {
-      return this.config;
-    }
+  this.__getConfig= function() {
+    return this.config;
+  }
 
-    this.__setConfig=function(appConfig) {
-      this.config = appConfig;
-    }
+  this.__setConfig=function(appConfig) {
+    this.config = appConfig;
+  }
 
-    this.__getUser= function() {
-      return this.user;
-    }
+  this.__getUser= function() {
+    return this.user;
+  }
 
-    this.__setUser= function(userObj) {
-      this.user = userObj;
-    }
+  this.__setUser= function(userObj) {
+    this.user = userObj;
+  }
 
-    this.__getURLBuilder= function() {
-      return this.URLBuilder;
-    }
+  this.__getURLBuilder= function() {
+    return this.URLBuilder;
+  }
 
-    this.__setURLBuilder=function(builder) {
-      this.URLBuilder = builder;
-    }
+  this.__setURLBuilder=function(builder) {
+    this.URLBuilder = builder;
+  }
 
-    this.__getApplicationName = function() {
-        return applicationName;
-    };
-
-    this.__setApplicationName = function(app) {
-        applicationName = app;
-    };
-
+  this.__getApplicationName = function() {
+    return applicationName;
   };
-  IC.Config = new __ICConfig;
 
-  __ICUtils = function() {
-    this.__IsUserNeedsToBeRegistered = function() {
+  this.__setApplicationName = function(app) {
+    applicationName = app;
+  };
+
+  this.__getApplicationRegion = function() {
+    return applicationRegion;
+  };
+
+  this.__setApplicationRegion = function(region) {
+    applicationRegion = region;
+  };
+
+};
+IC.Config = new __ICConfig;
+
+__ICUtils = function() {
+  this.__IsUserNeedsToBeRegistered = function() {
+    if (IC.DAO.getItem("USER_ID") == null && IC.DAO.getItem("DEVICE_ID") == null && IC.DAO.getItem("APP_ID") == null && IC.DAO.getItem("REGION") == null) {
+      return true;
+    } 
+    return false; 
+  }
+
+  this.__IsUserNeedsToBeReRegistered = function() {
+    if(IC.DAO.getItem("USER_ID") == IC.Config.user.__getUserID() && JSON.stringify(IC.DAO.getItem("ATTRIBUTES")) == JSON.stringify(IC.Config.user.__getAttributes()) && IC.DAO.getItem("DEVICE_ID") == IC.Config.config.__getDeviceID() && IC.DAO.getItem("APP_ID") == IC.Config.__getApplicationName() && IC.DAO.getItem("REGION") == IC.Config.__getApplicationRegion()) {
       return false;
     }
+    return true;
+  }
 
-    this.__IsUserNeedsToBeReRegistered = function() {
+  this.__IsUpdateRegistrationRequired = function() {
+    if(IC.DAO.getItem("DEVICE_ID") != IC.Config.config.__getDeviceID()) {
       return false;
     }
-
-    this.__IsUpdateRegistrationRequired = function() {
+    if (IC.DAO.getItem("USER_ID") == IC.Config.user.__getUserID() && JSON.stringify(IC.DAO.getItem("ATTRIBUTES")) == JSON.stringify(IC.Config.user.__getAttributes())) {
       return false;
     }
+    return true;
+  }
 
-    this.__getRegistrationData = function() {
-      var registrationData = {};
-      registrationData.deviceId = IC.Config.config.__getDeviceID();
-      registrationData.platform = 'Web';
-      registrationData.os = 'Chrome';
-      registrationData.userId = IC.Config.user.__getUserID();
-      if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
-        registrationData.attributes = IC.Config.user.__getAttributes();
-      }
-      return registrationData
+  this.__saveUserContext = function() {
+    IC.DAO.setItem("USER_ID", IC.Config.user.__getUserID());
+    IC.DAO.setItem("DEVICE_ID", IC.Config.config.__getDeviceID());
+    IC.DAO.setItem("APP_ID", IC.Config.__getApplicationName());
+    IC.DAO.setItem("REGION", IC.Config.__getApplicationRegion());
+    IC.DAO.setItem("USER_ID", IC.Config.user.__getUserID());
+    if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
+      IC.DAO.setItem("ATTRIBUTES", IC.Config.user.__getAttributes());
     }
+  }
 
-    this.__getUpdateRegistrationData = function() {
-      var registrationData = {};
-      registrationData.platform = 'A'
-      registrationData.userId = IC.Config.user.__getUserID();
-      if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
-        registrationData.attributes = IC.Config.user.__getAttributes();
-      }
-      return registrationData;
+  this.__clearUserContext = function() {
+    IC.DAO.removeItem("USER_ID");
+    IC.DAO.removeItem("DEVICE_ID");
+    IC.DAO.removeItem("APP_ID");
+    IC.DAO.removeItem("REGION");
+    IC.DAO.removeItem("USER_ID");
+    IC.DAO.removeItem("ATTRIBUTES");
+    IC.DAO.removeItem("FEATURES");
+    IC.DAO.removeItem("INAPP");
+  }
+
+  this.__getRegistrationData = function() {
+    var registrationData = {};
+    registrationData.deviceId = IC.Config.config.__getDeviceID();
+    registrationData.platform = 'Web';
+    registrationData.os = 'Chrome';
+    registrationData.userId = IC.Config.user.__getUserID();
+    if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
+      registrationData.attributes = IC.Config.user.__getAttributes();
     }
+    return registrationData
+  }
 
-    this.__generateSuccessResponse = function(actions) {
-      var response = {};
-      response.responseJSON = actions;
-      return response;
+  this.__getUpdateRegistrationData = function() {
+    var registrationData = {};
+    registrationData.platform = 'A'
+    registrationData.userId = IC.Config.user.__getUserID();
+    if (!IC.Utils.__isEmptyObject(IC.Config.user.__getAttributes())) {
+      registrationData.attributes = IC.Config.user.__getAttributes();
     }
+    return registrationData;
+  }
 
-    this.__generateFailureResponse = function(errorCode, errorMessage) {
-      var response = {};
-      response.errorCode = errorCode;
-      response.errorMessage = errorMessage;
-      return response;
-    }
+  this.__generateSuccessResponse = function(actions) {
+    var response = {};
+    response.responseJSON = actions;
+    return response;
+  }
 
-    this.__isValidArray = function(array) {
-      if(typeof array != "undefined" && array != null && array.length != null && array.length > 0){
-        return true;
-      }
-      return false;
-    }
+  this.__generateFailureResponse = function(errorCode, errorMessage) {
+    var response = {};
+    response.errorCode = errorCode;
+    response.errorMessage = errorMessage;
+    return response;
+  }
 
-    this.__validateString = function(str) {
-      if (typeof str == 'undefined' || !str || str.length === 0 || str === "" || !/[^\s]/.test(str) || /^\s*$/.test(str) || str.replace(/\s/g,"") === "")
-      {
-        return false;
-      }
+  this.__isValidArray = function(array) {
+    if(typeof array != "undefined" && array != null && array.length != null && array.length > 0){
       return true;
     }
+    return false;
+  }
 
-    this.__isEmptyObject = function(obj) {
-      for(var prop in obj) {
-        if(obj.hasOwnProperty(prop))
-          return false;
-      }
-      return JSON.stringify(obj) === JSON.stringify({});
+  this.__validateString = function(str) {
+    if (typeof str == 'undefined' || !str || str.length === 0 || str === "" || !/[^\s]/.test(str) || /^\s*$/.test(str) || str.replace(/\s/g,"") === "")
+    {
+      return false;
     }
-  }
-  IC.Utils = new __ICUtils;
-
-  __ICRESTInvoker = function(applaunchURL, applaunchMethod) {
-    this.url = applaunchURL;
-    this.method = applaunchMethod;
-    this.callBack;
-    this.json = {};
-    this.headers = {};
+    return true;
   }
 
-  __ICRESTInvoker.prototype = {
-    execute : function() {
-      var callBack = this.callBack;
-      var xmlHttp = new XMLHttpRequest();
+  this.__isEmptyObject = function(obj) {
+    for(var prop in obj) {
+      if(obj.hasOwnProperty(prop))
+        return false;
+    }
+    return JSON.stringify(obj) === JSON.stringify({});
+  }
+}
+IC.Utils = new __ICUtils;
+
+__ICRESTInvoker = function(applaunchURL, applaunchMethod) {
+  this.url = applaunchURL;
+  this.method = applaunchMethod;
+  this.callBack;
+  this.json = {};
+  this.headers = {};
+}
+
+__ICRESTInvoker.prototype = {
+  execute : function() {
+    var callBack = this.callBack;
+    var xmlHttp = new XMLHttpRequest();
       xmlHttp.open(this.method, this.url, true); // true for asynchronous
       xmlHttp.onload = function () {
        callBack(xmlHttp);
@@ -734,8 +773,9 @@ __URLBuilder.prototype = {
 }
 
 __registerDevice = function(dfd) {
-  if(IC.Utils.__IsUserNeedsToBeRegistered() && IC.Utils.__IsUserNeedsToBeReRegistered()) {
+  if(!IC.Utils.__IsUserNeedsToBeRegistered() && !IC.Utils.__IsUserNeedsToBeReRegistered()) {
       // User Already Registered, Proceed with getActions Call
+      IC.Config.isInitialized = true;
       __getActions(dfd);
     }
     else {
@@ -745,7 +785,7 @@ __registerDevice = function(dfd) {
       if (IC.Utils.__IsUpdateRegistrationRequired()) {
         // Update Registration Call
         method = 'PUT'
-        requestURL = IC.Config.__getURLBuilder().__getAppRegistrationURL();
+        requestURL = IC.Config.__getURLBuilder().__getUserURL();
         registrationData = IC.Utils.__getUpdateRegistrationData();
       }
       var request = new __ICRESTInvoker(requestURL, method);
@@ -754,10 +794,11 @@ __registerDevice = function(dfd) {
       request.setCallBack(function(response) {
         if(response.status == 202) {
           IC.Config.isInitialized = true;
-          //TODO: Save User Context
+          IC.Utils.__saveUserContext();
           __getActions(dfd);
         } else {
           IC.Config.isInitialized = false;
+          IC.Utils.__clearUserContext();
           dfd.reject(IC.Utils.__generateFailureResponse(errorCode.REGISTRATION_FAILURE, response.response));
         }
       });
@@ -779,8 +820,8 @@ __registerDevice = function(dfd) {
       if(data.status == 200) {
         // save actions
         var json = JSON.parse(data.response)
-        ICAppLaunchFeatures = json.features;
-        ICAppLaunchInAppMessages = json.inApp;
+        IC.DAO.setItem("FEATURES", json.features);
+        IC.DAO.setItem("INAPP", json.inApp);
         dfd.resolve(IC.Utils.__generateSuccessResponse(json));
       } else {
         dfd.reject(IC.Utils.__generateFailureResponse(errorCode.FETCH_ACTIONS_FAILURE, data.response));
@@ -818,33 +859,33 @@ __registerDevice = function(dfd) {
   };
 
   var __appLaunchConfigBuilder = function() {
-    var policy = null;
-    var deviceID = null;
-    var cacheExpiration = 30;
-    var eventFlushInterval = 30;
+    this.policy = null;
+    this.appDeviceID = null;
+    this.appCacheExpiration = 30;
+    this.appEventFlushInterval = 30;
 
     this.fetchPolicy = function(refreshPolicy) {
       this.policy = refreshPolicy;
       return this;
     }
     this.cacheExpiration = function(cacheExpiration) {
-      this.cacheExpiration = cacheExpiration;
+      this.appCacheExpiration = cacheExpiration;
       return this;
     }
     this.eventFlushInterval = function(eventFlushInterval) {
-      this.eventFlushInterval = eventFlushInterval;
+      this.appEventFlushInterval = eventFlushInterval;
       return this;
     }
     this.deviceID = function(deviceID) {
-      this.deviceID = deviceID;
+      this.appDeviceID = deviceID;
       return this;
     }
     this.build = function() {
       var config = new __appLaunchConfig();
       config.policy = this.policy;
-      config.deviceID = this.deviceID;
-      config.cacheExpiration = this.cacheExpiration;
-      config.eventFlushInterval = this.eventFlushInterval;
+      config.deviceID = this.appDeviceID;
+      config.cacheExpiration = this.appCacheExpiration;
+      config.eventFlushInterval = this.appEventFlushInterval;
       return config
     }
   };
@@ -863,23 +904,23 @@ __registerDevice = function(dfd) {
   };
 
   var __appLaunchUserBuilder = function() {
-    var userID = null;
-    var attributes = {};
+    this.appUserID = null;
+    this.attribute = {};
 
     this.userID = function(username) {
-      this.userID = username;
+      this.appUserID = username;
       return this;
     }
 
-    this.attributes = function(key, value) {
-      this.attributes[key] = value;
+    this.attributes = function(headerKey, headerValue) {
+      this.attribute[headerKey] = headerValue;
       return this;
     }
 
     this.build = function() {
       var user = new __appLaunchUser();
-      user.userID = this.userID;
-      user.attributes = this.attributes;
+      user.userID = this.appUserID;
+      user.attributes = this.attribute;
       return user;
     }
   };
@@ -893,6 +934,7 @@ __registerDevice = function(dfd) {
       IC.Config.__setUser(appLaunchUser);
       IC.Config.__setURLBuilder(builder);
       IC.Config.__setApplicationName(appGUID);
+      IC.Config.__setApplicationRegion(ICRegion);
       IC.DAO.init();
       __registerDevice(dfd);
     } else {
@@ -908,6 +950,7 @@ __registerDevice = function(dfd) {
 
   function __isFeatureEnabled(featureCode) {
     if(IC.Config.isInitialized) {
+      var ICAppLaunchFeatures = IC.DAO.getItem("FEATURES");
       for (var i = 0; i < ICAppLaunchFeatures.length; i++) {
         if(ICAppLaunchFeatures[i].code == featureCode)
           return true;
@@ -918,6 +961,7 @@ __registerDevice = function(dfd) {
 
   function __getPropertyofFeature(featureCode, propertyCode) {
     if(IC.Config.isInitialized) {
+      var ICAppLaunchFeatures = IC.DAO.getItem("FEATURES");
       for (var i = 0; i < ICAppLaunchFeatures.length; i++) {
         if(ICAppLaunchFeatures[i].code == featureCode) {
           var properties = ICAppLaunchFeatures[i].properties
