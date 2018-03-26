@@ -1,38 +1,27 @@
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    // AMD
-    define(factory);
-  } else {
-    // Browser globals init
-    root.IBMAppLaunch = factory();
+function isArray(arr) {
+  return Object.prototype.toString.call(arr) === '[object Array]';
+}
+
+function foreach(arr, handler) {
+  if (isArray(arr)) {
+    for (var i = 0; i < arr.length; i++) {
+      handler(arr[i]);
+    }
   }
-}(this, function() {
+  else
+    handler(arr);
+}
 
-  (function(global) {
-    function isArray(arr) {
-      return Object.prototype.toString.call(arr) === '[object Array]';
-    }
+function D(fn) {
+  var status = 'pending',
+  doneFuncs = [],
+  failFuncs = [],
+  progressFuncs = [],
+  resultArgs = null,
 
-    function foreach(arr, handler) {
-      if (isArray(arr)) {
-        for (var i = 0; i < arr.length; i++) {
-          handler(arr[i]);
-        }
-      }
-      else
-        handler(arr);
-    }
-
-    function D(fn) {
-      var status = 'pending',
-      doneFuncs = [],
-      failFuncs = [],
-      progressFuncs = [],
-      resultArgs = null,
-
-      promise = {
-        done: function() {
-          for (var i = 0; i < arguments.length; i++) {
+  promise = {
+    done: function() {
+      for (var i = 0; i < arguments.length; i++) {
             // skip any undefined or null arguments
             if (!arguments[i]) {
               continue;
@@ -179,7 +168,7 @@
                   if (returnval && typeof returnval === 'function') {
                     returnval.promise().then(def.resolve, def.reject, def.notify);
                   }
-                  else {	// if new return val is passed, it is passed to the piped done
+                  else {  // if new return val is passed, it is passed to the piped done
                     def.resolve(returnval);
                   }
                 });
@@ -279,7 +268,7 @@
           var df = D(),
           size = args.length,
           done = 0,
-          rp = new Array(size);	// resolve params: params of each resolve, we need to track down them to be able to pass them in the correct order if the master needs to be resolved
+          rp = new Array(size); // resolve params: params of each resolve, we need to track down them to be able to pass them in the correct order if the master needs to be resolved
 
           for (var i = 0; i < args.length; i++) {
             (function(j) {
@@ -311,15 +300,18 @@
       return true;
     }
 
-    global.Deferred = D;
-    global.ICJQ = D;
-    global.ICJQ.Deferred = function () {
+    var Deferred = D;
+    D.Deferred = function () {
       return new Deferred();
     }
-  })(window);
+    var ICJQ = D;
+    
+
+
+window.IBMAppLaunch = (function() {
 
   function __IC() {}
-  var IC = IC ? IC : {};
+      var IC = IC ? IC : {};
   // variables
   var icregion = { 
     US_SOUTH : ".ng.bluemix.net",
@@ -337,6 +329,14 @@
     DEFAULT_FEATURE_LOAD_FAILURE: 3,
     UNREGISTRATION_FAILURE: 4
   };
+
+  var RefreshPolicy = {
+    REFRESH_ON_EVERY_START : 0,
+    REFRESH_ON_EXPIRY : 1,
+    BACKGROUND_REFRESH : 2
+  };
+
+  var ActionRefreshTimer;
 
   // private methods
   __ICLocalStorageDB = function() {
@@ -642,6 +642,7 @@ __ICUtils = function() {
     IC.DAO.removeItem("ATTRIBUTES");
     IC.DAO.removeItem("FEATURES");
     IC.DAO.removeItem("INAPP");
+    IC.DAO.removeItem("ACTIONS");
   }
 
   this.__getRegistrationData = function() {
@@ -700,6 +701,47 @@ __ICUtils = function() {
         return false;
     }
     return JSON.stringify(obj) === JSON.stringify({});
+  }
+
+  this.__getCurrentDateAndTime = function() {
+    var time = new Date().getTime();
+    return time;
+  }
+
+  this.__displayMessage = function(title, subTitle, imageUrl, leftBtnText, rightBtnText) {
+    d = document;
+    if(d.getElementById("appLaunch-modalContainer")) return;
+    mObj = d.getElementsByTagName("body")[0].appendChild(d.createElement("div"));
+    mObj.id = "appLaunch-modalContainer";
+    mObj.style.height = d.documentElement.scrollHeight + "px";
+    alertObj = mObj.appendChild(d.createElement("div"));
+    alertObj.id = "alertBox";
+    if(d.all && !window.opera) alertObj.style.top = document.documentElement.scrollTop + "px";
+    alertObj.style.left = (d.documentElement.scrollWidth - alertObj.offsetWidth)/2 + "px";
+    alertObj.style.visiblity="visible";
+    h1 = alertObj.appendChild(d.createElement("h1"));
+    h1.appendChild(d.createTextNode(title));
+    var messageContainer = d.createElement('div');
+    var image = d.createElement('img');
+    image.src = imageUrl;
+    var content = d.createElement("p");
+    content.innerHTML = subTitle;
+    messageContainer.appendChild(image);
+    messageContainer.appendChild(content);
+    messageContainer.id = "applaunch-msg-container";
+    alertObj.appendChild(messageContainer);
+    var button_container = d.createElement('div');
+    var cancelBtn = d.createElement('button');
+    var okBtn = d.createElement('button');
+    cancelBtn.innerHTML = rightBtnText;
+    okBtn.innerHTML = leftBtnText;
+    button_container.appendChild(okBtn);
+    button_container.appendChild(cancelBtn);
+    okBtn.onclick = "javascript:removeCustomAlert();" ;
+    cancelBtn.onclick = "javascript:removeCustomAlert();" ;
+    button_container.id = "applaunch-btn-container";
+    alertObj.appendChild(button_container);
+    alertObj.style.display = "block";
   }
 }
 IC.Utils = new __ICUtils;
@@ -808,6 +850,35 @@ __registerDevice = function(dfd) {
   }
 
   __getActions = function(dfd) {
+    var policy = IC.Config.config.__getPolicy();
+    switch (policy) {
+      case RefreshPolicy.REFRESH_ON_EVERY_START:
+      __refreshActions(dfd);
+      break;
+      case RefreshPolicy.REFRESH_ON_EXPIRY:
+      var expirationTime = IC.DAO.getItem("CACHE_EXPIRATION")==null ? 0 : IC.DAO.getItem("CACHE_EXPIRATION");
+      var currentTime = IC.Utils.__getCurrentDateAndTime();
+      if (expirationTime < currentTime) {
+        __refreshActions(dfd);
+      } else {
+        if (IC.Utils.__isEmptyObject(IC.DAO.getItem("ACTIONS"))) {
+          __refreshActions(dfd);
+        } else {
+          dfd.resolve(IC.Utils.__generateSuccessResponse(IC.DAO.getItem("ACTIONS")));
+        }
+      }
+      break;
+      case RefreshPolicy.BACKGROUND_REFRESH:
+      var expirationTime = IC.DAO.getItem("CACHE_EXPIRATION")==null ? 1 : IC.DAO.getItem("CACHE_EXPIRATION");
+      ActionRefreshTimer = window.setTimeout(__fetchActions(), (expirationTime * 6000));
+      break;
+      default: 
+      __refreshActions(dfd);
+    }
+  }
+
+  __fetchActions = function() {
+    var dfd = ICJQ.Deferred();
     __refreshActions(dfd);
   }
 
@@ -818,8 +889,11 @@ __registerDevice = function(dfd) {
     request.addHeader('clientSecret', IC.Config.config.__getClientSecret())
     request.setCallBack(function(data){
       if(data.status == 200) {
+        var expirationTime = (IC.Utils.__getCurrentDateAndTime() + (IC.Config.config.__getCacheExpiration() * 6000));
+        IC.DAO.setItem("CACHE_EXPIRATION", expirationTime);
         // save actions
         var json = JSON.parse(data.response)
+        IC.DAO.setItem("ACTIONS", json);
         IC.DAO.setItem("FEATURES", json.features);
         IC.DAO.setItem("INAPP", json.inApp);
         dfd.resolve(IC.Utils.__generateSuccessResponse(json));
@@ -976,7 +1050,10 @@ __registerDevice = function(dfd) {
     return "";
   }
 
-  function _displayInAppMessages() {
+  function __displayInAppMessages() {
+    var ICAppLaunchInAppMessages = IC.DAO.getItem("INAPP");
+    var message = ICAppLaunchInAppMessages[0];
+    IC.Utils.__displayMessage(message["title"], message["subtitle"], message["imageUrl"], message["buttons"][0]["name"], message["buttons"][1]["name"]);
   }
 
   function __sendMetrics(codes) {
@@ -1017,6 +1094,7 @@ __registerDevice = function(dfd) {
     sendMetrics: __sendMetrics,
     isFeatureEnabled: __isFeatureEnabled,
     getPropertyofFeature: __getPropertyofFeature,
-    displayInAppMessages: _displayInAppMessages
-  }
-}));
+    displayInAppMessages: __displayInAppMessages
+  };
+
+}());
